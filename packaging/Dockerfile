@@ -47,6 +47,11 @@ RUN set -eux \
     && ls /src/build/share/kvmem/ui | head
 
 # 打包产物：二进制 + 运行时库闭包 + Web UI
+# patchelf 用于把构建期绝对 RUNPATH 重写为 $ORIGIN（跨机器可用）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY packaging/stage_libs.py /usr/local/bin/stage_libs.py
 RUN set -eux \
     && mkdir -p /out/bin /out/lib /out/share/kvmem \
@@ -54,5 +59,10 @@ RUN set -eux \
     && python3 /usr/local/bin/stage_libs.py /out/bin/llama-kvmem-server /out/lib \
     && cp -r build/share/kvmem/ui /out/share/kvmem/ \
     && cp -r build/share/kvmem/ui-lightweight /out/share/kvmem/ \
-    && echo '--- ldd check ---' \
-    && LD_LIBRARY_PATH=/out/lib ldd /out/bin/llama-kvmem-server
+    # patchelf 0.14（Debian 12 系）没有 --set-runpath；--set-rpath 在已有
+    # DT_RUNPATH 的对象上会更新 RUNPATH（已验证）
+    && patchelf --set-rpath '$ORIGIN:$ORIGIN/../lib' /out/bin/llama-kvmem-server \
+    && for f in /out/lib/*.so*; do patchelf --set-rpath '$ORIGIN' "$f"; done \
+    && readelf -d /out/bin/llama-kvmem-server | grep -E 'RUNPATH|RPATH' \
+    && echo '--- final ldd (clean env, 仅允许 libcuda 由驱动提供) ---' \
+    && { env -u LD_LIBRARY_PATH ldd /out/bin/llama-kvmem-server || true; }

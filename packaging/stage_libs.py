@@ -2,20 +2,30 @@
 """Stage the shared-library closure of a binary into a target lib directory.
 
 Rules:
-  * libraries from the CUDA toolkit (/usr/local/cuda) are bundled;
-  * libstdc++.so.6 / libgcc_s.so.1 are bundled for cross-distro safety;
-  * glibc core libraries (libc/libm/libpthread/ld-*) are provided by the OS.
+  * every resolved dependency OUTSIDE the OS system directories is bundled
+    (project libraries like libllama/libggml + CUDA toolkit libraries);
+  * libstdc++.so.6 / libgcc_s.so.1 are bundled even though they live in
+    system dirs (cross-distro safety);
+  * glibc core libraries (libc/libm/libpthread/ld-*) are provided by the OS;
+  * libcuda.so.1 / libnvidia-ml.so.1 are supplied by the target's NVIDIA
+    driver and are allowed to be missing in the build image.
 
 Iterates ldd with the staging dir on LD_LIBRARY_PATH until the closure
-stops growing, then verifies nothing is missing.
+stops growing, then verifies nothing (but the allowed set) is missing.
 """
 import os
 import shutil
 import subprocess
 import sys
 
-COPY_PREFIXES = ("/usr/local/cuda",)
-COPY_NAMES = {"libstdc++.so.6", "libgcc_s.so.1"}
+# 仅这些 glibc 核心库由目标系统提供（fnOS Debian 12 均自带）
+EXCLUDE_NAMES = {
+    "libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2",
+    "librt.so.1", "libresolv.so.2", "libnss_files.so.2",
+    "libnss_dns.so.2", "libnss_compat.so.2", "libcrypt.so.1",
+}
+# 其余依赖（项目库 libllama/libggml、CUDA 工具链库、libnccl、libstdc++/libgcc_s）全部随包分发
+ALLOWED_MISSING = {"libcuda.so.1", "libnvidia-ml.so.1"}
 
 
 def ldd_deps(binary: str, extra_libdir: str | None):
@@ -39,6 +49,12 @@ def ldd_deps(binary: str, extra_libdir: str | None):
     return deps, missing
 
 
+def should_copy(name: str, target: str) -> bool:
+    if name in ALLOWED_MISSING or name in EXCLUDE_NAMES:
+        return False
+    return True
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(f"usage: {sys.argv[0]} BINARY STAGING_LIBDIR", file=sys.stderr)
@@ -52,14 +68,14 @@ def main() -> int:
     copied: set[str] = set()
     for round_no in range(1, 11):
         deps, missing = ldd_deps(binary, libdir)
+        missing = [m for m in missing if m not in ALLOWED_MISSING]
         if missing:
             print(f"round {round_no}: MISSING: {missing}", file=sys.stderr)
             return 1
         new = []
-        for _name, target in deps:
-            base = os.path.basename(target)
-            should_copy = any(target.startswith(p) for p in COPY_PREFIXES) or base in COPY_NAMES
-            if should_copy and target not in copied and not os.path.exists(os.path.join(libdir, base)):
+        for name, target in deps:
+            if should_copy(name, target) and target not in copied \
+                    and not os.path.exists(os.path.join(libdir, os.path.basename(target))):
                 new.append(target)
         if not new:
             break
@@ -75,15 +91,14 @@ def main() -> int:
 
     # final verification
     deps, missing = ldd_deps(binary, libdir)
+    missing = [m for m in missing if m not in ALLOWED_MISSING]
     if missing:
         print(f"verification FAILED, missing: {missing}", file=sys.stderr)
         return 1
-    for _name, target in deps:
-        base = os.path.basename(target)
-        if any(target.startswith(p) for p in COPY_PREFIXES) or base in COPY_NAMES:
-            if not os.path.exists(os.path.join(libdir, base)):
-                print(f"verification FAILED, not staged: {base}", file=sys.stderr)
-                return 1
+    for name, target in deps:
+        if should_copy(name, target) and not os.path.exists(os.path.join(libdir, os.path.basename(target))):
+            print(f"verification FAILED, not staged: {os.path.basename(target)}", file=sys.stderr)
+            return 1
     print(f"OK: {len(os.listdir(libdir))} libraries staged into {libdir}")
     return 0
 

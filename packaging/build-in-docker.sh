@@ -14,10 +14,12 @@ OUT="$ROOT/build/out"
 echo "==> 构建镜像 $IMAGE (CUDA_ARCHS=$ARCHS)"
 docker build -f packaging/Dockerfile --build-arg CUDA_ARCHS="$ARCHS" -t "$IMAGE" "$ROOT"
 
-echo "==> 提取产物"
-rm -rf "$OUT"
+echo "==> 提取产物（容器内 root 清理 + chown 回宿主用户）"
 mkdir -p "$OUT"
-docker run --rm -v "$OUT":/extract "$IMAGE" sh -c 'cp -a /out/. /extract/'
+docker run --rm \
+    -v "$OUT":/extract \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+    "$IMAGE" sh -c 'find /extract -mindepth 1 -delete && cp -a /out/. /extract/ && chown -R "$HOST_UID:$HOST_GID" /extract'
 
 echo "==> 产物列表"
 find "$OUT" -maxdepth 3 -type f | head -30

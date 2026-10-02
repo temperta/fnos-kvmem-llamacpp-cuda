@@ -103,24 +103,38 @@ python3 scripts/build-webui.py --output build/share/kvmem/ui-lightweight
 ## 安装到 NAS
 
 ```bash
-# 将 dist/*.fpk 上传到 NAS（scp/文件管理器均可），然后：
-sudo appcenter-cli install-fpk /path/to/kvmemllamacpp-0.17.0.fpk
-# 向导值可通过环境变量文件传入：
+# 将 dist/kvmemllamacpp.fpk 上传到 NAS（scp/文件管理器均可），然后：
+sudo appcenter-cli install-fpk /path/to/kvmemllamacpp.fpk
+# 向导值可通过环境变量文件传入（config.env，每行 key=value）：
 #   wizard_port=18200
 #   wizard_model_path=/vol1/@appdata.../kvmemllamacpp/models/model.gguf
 #   wizard_ctx_size=32768
 #   wizard_lan_access=no
-sudo appcenter-cli install-fpk kvmemllamacpp-0.17.0.fpk --env config.env
+sudo appcenter-cli install-fpk kvmemllamacpp.fpk --env config.env
 sudo appcenter-cli start kvmemllamacpp
 ```
 
 或在 fnOS 应用中心界面手动上传安装。
 
-## 验证记录
+## 验证记录（2026-10-02）
 
-- 编译：CUDA 13.0.88 / GCC 11.4 / CMake 4.4（Docker 内），7 架构 fat binary。
-- 运行时冒烟测试：见 `dist/` 生成前的构建日志；建议在目标 NAS 上用
-  `appcenter-cli start kvmemllamacpp` + `curl 127.0.0.1:18200/props` 复核。
+- 编译：nvidia/cuda:13.0.3-devel-ubuntu22.04，nvcc 13.0.88 / GCC 11.4 /
+  CMake 4.4（pip），fat binary 架构 75/80/86/89/90/120a/121a。
+- 随包运行时库（ldd 闭包，14 个）：项目库 libllama/libllama-common/libmtmd/
+  libggml/libggml-base/libggml-cuda/libggml-cpu + CUDA 13.0 的
+  libcudart/libcublas/libcublasLt/libnccl + libstdc++/libgcc_s/libgomp。
+  RUNPATH 已 patchelf 为 `$ORIGIN:$ORIGIN/../lib`，无 LD_LIBRARY_PATH 亦可运行。
+- 宿主机冒烟测试（RTX 2060 SUPER / 驱动 615 / `packaging/smoke-test.sh`）：
+  - `--list-devices` 正常识别 sm_75 设备
+  - Qwen2.5-0.5B-Instruct Q8_0 启动成功：KVMem 启用（method=retrieval），
+    4096 ctx，端口绑定正常
+  - `/props`、`/v1/models`、`/v1/chat/completions` 全部正常（185 tok/s 生成连贯回答）
+  - 内置完整 Web UI：`GET /` → 200
+- `cmd/main` 生命周期脚本已在 /tmp 沙盒完整模拟：自动/指定模型、端口冲突、
+  幂等 start、stop/status 退出码（0/3）、无模型时的用户可见报错。
+- 产物：`dist/kvmemllamacpp.fpk`（773MB，gzip tar，22 个条目 + app.tgz 122 条目）。
+- 待目标 NAS 复核：`appcenter-cli start kvmemllamacpp` 后
+  `curl 127.0.0.1:18200/props`（驱动 580/CUDA 13.0 兼容性与实际吞吐）。
 
 ## 更新上游版本
 
