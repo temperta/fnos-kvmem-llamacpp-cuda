@@ -5,7 +5,11 @@ ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
 CONF="$ETC/config.conf"
 mkdir -p "$ETC"
 touch "$CONF"
-for kv in "service_port:18200" "model_path:" "mmproj_path:" "api_key:" "lan_access:no" "ctx_size:32768"; do
+# 默认值对齐上游 IQ3 配方；已有旧值（如旧版 ctx_size=32768）保持不变
+for kv in "service_port:18200" "model_path:" "mmproj_path:" "vision_device:cpu" \
+          "kv_dtype:q8_0" "ctx_size:262144" "kvmem_budget:36864" "kvmem_gen_reserve:16384" \
+          "n_predict:16384" "image_max_tokens:512" "spec_type:draft-mtp" "enable_thinking:on" \
+          "reasoning_budget:4096" "api_key:" "lan_access:no"; do
     key="${kv%%:*}"
     def="${kv#*:}"
     if ! grep -q "^$key=" "$CONF"; then

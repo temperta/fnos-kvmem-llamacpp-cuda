@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "需要 NVIDIA GPU 与驱动 580 及以上（CUDA 13.0 运行时已内置，无需另装 CUDA）。建议把 GGUF 模型文件放入共享目录 kvmemllamacpp/models。"
+        "helpText": "需要 NVIDIA GPU 与驱动 580 及以上（CUDA 13.0 运行时已内置，无需另装 CUDA）。建议把 GGUF 模型文件放入共享目录 kvmemllamacpp/models。默认参数按上游推荐的 IQ3 配方（start-iq3.sh）设定：q8 KV、36K GPU 工作集 / 16K 生成预留、视觉走 CPU、draft-mtp 投机解码、256K 上下文；纯文本模型或显存较小时请按提示调整。"
       },
       {
         "type": "text",
@@ -12,14 +12,20 @@
         "label": "服务端口",
         "initValue": "18200",
         "rules": [
-          { "required": true, "message": "请输入服务端口" },
-          { "pattern": "^[0-9]+$", "message": "端口只能为数字（1-65535）" }
+          {
+            "required": true,
+            "message": "请输入服务端口"
+          },
+          {
+            "pattern": "^[0-9]+$",
+            "message": "端口只能为数字（1-65535）"
+          }
         ]
       },
       {
         "type": "text",
         "field": "wizard_model_path",
-        "label": "GGUF 模型路径（可选）",
+        "label": "主模型文件路径（可选）",
         "initValue": "",
         "helpText": "留空：自动选择 models 共享目录中唯一的 .gguf；填写：固定使用该模型。启动服务前需先准备好模型。"
       },
@@ -31,12 +37,161 @@
         "helpText": "多模态模型的 vision projector GGUF（.mmproj/.gguf）；纯文本模型留空。"
       },
       {
+        "type": "select",
+        "field": "wizard_vision_device",
+        "label": "视觉编码器位置",
+        "initValue": "cpu",
+        "helpText": "IQ3 配方默认 CPU（视觉编码器不上 GPU，给主模型留显存）；显存充足可选 GPU 加速视觉。",
+        "options": [
+          {
+            "label": "CPU（IQ3 配方默认）",
+            "value": "cpu"
+          },
+          {
+            "label": "GPU（视觉编码器上卡，占用显存）",
+            "value": "gpu"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_kv_dtype",
+        "label": "KV 缓存类型",
+        "initValue": "q8_0",
+        "helpText": "GPU KV 缓存量化类型。IQ3 配方用 q8_0；f16 精度更高但显存翻倍。",
+        "options": [
+          {
+            "label": "q8_0（推荐，IQ3 配方默认）",
+            "value": "q8_0"
+          },
+          {
+            "label": "f16（高精度，占显存多）",
+            "value": "f16"
+          },
+          {
+            "label": "f32（最高精度，极占显存）",
+            "value": "f32"
+          },
+          {
+            "label": "q5_0（更省显存）",
+            "value": "q5_0"
+          },
+          {
+            "label": "q4_0（最省显存，精度最低）",
+            "value": "q4_0"
+          }
+        ]
+      },
+      {
         "type": "text",
         "field": "wizard_ctx_size",
         "label": "上下文长度（tokens）",
-        "initValue": "32768",
+        "initValue": "262144",
+        "helpText": "IQ3 配方为 262144（256K，超出 GPU 工作集的部分由 KVMem 放主机内存检索）。显存/内存紧张可改小，如 32768。",
         "rules": [
-          { "pattern": "^[0-9]+$", "message": "请输入数字" }
+          {
+            "pattern": "^[0-9]+$",
+            "message": "请输入数字"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_kvmem_budget",
+        "label": "KVMem GPU 工作集（tokens）",
+        "initValue": "36864",
+        "helpText": "常驻 GPU 的 KV token 预算（IQ3 配方 36864）。0 = 取上下文长度（不启用检索）。",
+        "rules": [
+          {
+            "pattern": "^[0-9]+$",
+            "message": "请输入数字"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_kvmem_gen_reserve",
+        "label": "KVMem 生成预留（tokens）",
+        "initValue": "16384",
+        "helpText": "解码时为新生成 token 预留的 GPU 空间（IQ3 配方 16384）。",
+        "rules": [
+          {
+            "pattern": "^[0-9]+$",
+            "message": "请输入数字"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_n_predict",
+        "label": "默认最大生成 tokens",
+        "initValue": "16384",
+        "helpText": "未指定 max_tokens 的请求默认上限（IQ3 配方 16384）；-1 = 不额外限制。",
+        "rules": [
+          {
+            "pattern": "^-?[0-9]+$",
+            "message": "请输入数字（可为 -1）"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_image_max_tokens",
+        "label": "图片最大 token 数",
+        "initValue": "512",
+        "helpText": "单张图片编码的最大 token 上限（IQ3 配方 512）。",
+        "rules": [
+          {
+            "pattern": "^[0-9]+$",
+            "message": "请输入数字"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_spec_type",
+        "label": "MTP 投机解码",
+        "initValue": "draft-mtp",
+        "helpText": "IQ3 模型（*-mtp.gguf）选 draft-mtp 可加速；普通模型选 none（服务器会自动回退）。",
+        "options": [
+          {
+            "label": "draft-mtp（IQ3 配方默认，需 MTP 模型）",
+            "value": "draft-mtp"
+          },
+          {
+            "label": "none（关闭投机解码）",
+            "value": "none"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_enable_thinking",
+        "label": "思考模式",
+        "initValue": "on",
+        "helpText": "Qwen3.8 等 Thinking 模型默认开启（IQ3 配方）；请求级仍可在 API 中覆盖。⚠ 非 Thinking 模型（如 Qwen2.5/Llama 等，聊天模板无思考标记）必须选“关闭”，否则所有请求会报错“no usable thinking markers”。",
+        "options": [
+          {
+            "label": "开启（IQ3 配方默认）",
+            "value": "on"
+          },
+          {
+            "label": "关闭",
+            "value": "off"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_reasoning_budget",
+        "label": "思考 token 预算",
+        "initValue": "4096",
+        "helpText": "思考阶段强制结束上限（IQ3 配方 4096）；-1 不限制，0 立即结束思考。仅对含思考标记的模型生效；思考模式关闭时此值被忽略。",
+        "rules": [
+          {
+            "pattern": "^-?[0-9]+$",
+            "message": "请输入数字（可为 -1）"
+          }
         ]
       },
       {
@@ -52,8 +207,14 @@
         "label": "局域网访问",
         "initValue": "no",
         "options": [
-          { "label": "否，仅本机访问（绑定 127.0.0.1）", "value": "no" },
-          { "label": "是，允许局域网访问（绑定 0.0.0.0，生产环境建议配合 API Key）", "value": "yes" }
+          {
+            "label": "否，仅本机访问（绑定 127.0.0.1）",
+            "value": "no"
+          },
+          {
+            "label": "是，允许局域网访问（绑定 0.0.0.0，生产环境建议配合 API Key）",
+            "value": "yes"
+          }
         ]
       }
     ]

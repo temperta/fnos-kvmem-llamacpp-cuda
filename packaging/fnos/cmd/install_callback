@@ -1,6 +1,7 @@
 #!/bin/bash
 # 安装文件应用后执行：将安装向导收集的值持久化到配置
 # 注意：config.conf 可能包含 api_key（明文），权限收紧为 600
+# 键名与 cmd/main load_config 一一对应（默认值对齐上游 IQ3 配方）
 set -u
 ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
 CONF="$ETC/config.conf"
@@ -9,9 +10,18 @@ mkdir -p "$ETC"
     printf 'service_port=%q\n' "${wizard_port:-18200}"
     printf 'model_path=%q\n' "${wizard_model_path:-}"
     printf 'mmproj_path=%q\n' "${wizard_mmproj_path:-}"
+    printf 'vision_device=%q\n' "${wizard_vision_device:-cpu}"
+    printf 'kv_dtype=%q\n' "${wizard_kv_dtype:-q8_0}"
+    printf 'ctx_size=%q\n' "${wizard_ctx_size:-262144}"
+    printf 'kvmem_budget=%q\n' "${wizard_kvmem_budget:-36864}"
+    printf 'kvmem_gen_reserve=%q\n' "${wizard_kvmem_gen_reserve:-16384}"
+    printf 'n_predict=%q\n' "${wizard_n_predict:-16384}"
+    printf 'image_max_tokens=%q\n' "${wizard_image_max_tokens:-512}"
+    printf 'spec_type=%q\n' "${wizard_spec_type:-draft-mtp}"
+    printf 'enable_thinking=%q\n' "${wizard_enable_thinking:-on}"
+    printf 'reasoning_budget=%q\n' "${wizard_reasoning_budget:-4096}"
     printf 'api_key=%q\n' "${wizard_api_key:-}"
     printf 'lan_access=%q\n' "${wizard_lan_access:-no}"
-    printf 'ctx_size=%q\n' "${wizard_ctx_size:-32768}"
 } > "$CONF"
 chmod 600 "$CONF" 2>/dev/null || true
 exit 0

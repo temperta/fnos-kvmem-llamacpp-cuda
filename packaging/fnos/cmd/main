@@ -20,6 +20,15 @@ load_config() {
     api_key=""
     lan_access=""
     ctx_size=""
+    kv_dtype=""
+    kvmem_budget=""
+    kvmem_gen_reserve=""
+    n_predict=""
+    vision_device=""
+    spec_type=""
+    enable_thinking=""
+    reasoning_budget=""
+    image_max_tokens=""
     if [ -f "$CONF" ]; then
         # shellcheck disable=SC1090
         . "$CONF" 2>/dev/null || true
@@ -33,11 +42,48 @@ load_config() {
     if [ "$service_port" -lt 1 ] || [ "$service_port" -gt 65535 ]; then
         service_port=18200
     fi
+    # 以下默认值对齐上游推荐 IQ3 配方（scripts/start-iq3.sh / start-server.py --recipe iq3）
     case "$ctx_size" in
-        ''|*[!0-9]*) ctx_size=32768 ;;
+        ''|*[!0-9]*) ctx_size=262144 ;;
     esac
     if [ "$ctx_size" -lt 1024 ]; then
-        ctx_size=32768
+        ctx_size=262144
+    fi
+    case "$kv_dtype" in
+        q8_0|f16|f32|q5_0|q4_0) : ;;
+        *) kv_dtype=q8_0 ;;
+    esac
+    case "$kvmem_budget" in
+        ''|*[!0-9]*) kvmem_budget=36864 ;;
+    esac
+    case "$kvmem_gen_reserve" in
+        ''|*[!0-9]*) kvmem_gen_reserve=16384 ;;
+    esac
+    # n_predict: 允许 -1（不限制）或正整数
+    if [ "$n_predict" != "-1" ] && ! [[ "$n_predict" =~ ^[0-9]+$ ]]; then
+        n_predict=16384
+    fi
+    case "$vision_device" in
+        cpu|gpu) : ;;
+        *) vision_device=cpu ;;
+    esac
+    case "$spec_type" in
+        none|draft-mtp) : ;;
+        *) spec_type=draft-mtp ;;
+    esac
+    case "$enable_thinking" in
+        on|off) : ;;
+        *) enable_thinking=on ;;
+    esac
+    # reasoning_budget: 允许 -1（不限制）或 >=0 的整数
+    if [ "$reasoning_budget" != "-1" ] && ! [[ "$reasoning_budget" =~ ^[0-9]+$ ]]; then
+        reasoning_budget=4096
+    fi
+    case "$image_max_tokens" in
+        ''|*[!0-9]*) image_max_tokens=512 ;;
+    esac
+    if [ "$image_max_tokens" -lt 1 ]; then
+        image_max_tokens=512
     fi
     # 去除路径首尾空白
     mmproj_path="${mmproj_path#"${mmproj_path%%[![:space:]]*}"}"
@@ -148,31 +194,70 @@ do_start() {
         exit 1
     fi
 
-    local args=(
+    local spec="$spec_type" attempt=0 key_note="api_key=off"
+    [ -n "$api_key" ] && key_note="api_key=***"
+    while :; do
+        attempt=$((attempt + 1))
+        build_args "$spec"
+        echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) start model=$MODEL_RESOLVED mmproj=${mmproj_path:-none} vision=$vision_device kv=$kv_dtype ctx=$ctx_size budget=$kvmem_budget reserve=$kvmem_gen_reserve spec=$spec thinking=$enable_thinking $key_note ===" >> "$LOGFILE"
+        LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        nohup "$BIN" "${ARGS[@]}" \
+            >> "$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+
+        if wait_port; then
+            return 0
+        fi
+
+        # 进程退出：若配置了 draft-mtp 但模型不含 MTP 层，自动回退 none 重试一次
+        if [ "$attempt" = "1" ] && [ "$spec" = "draft-mtp" ] && mtp_unsupported; then
+            echo "检测到模型不含 MTP 层，自动改用 --spec-type none 重启" >> "$LOGFILE"
+            spec=none
+            sleep 2
+            continue
+        fi
+        exit 1
+    done
+}
+
+# 构造启动参数（填充全局数组 ARGS）
+build_args() {
+    local spec="$1"
+    ARGS=(
         --model "$MODEL_RESOLVED"
         --host "$host"
         --port "$service_port"
         --ctx-size "$ctx_size"
         --ui-dir "$UI_DIR"
     )
-    [ -n "$mmproj_path" ] && args+=( --mmproj "$mmproj_path" )
-    [ -n "$api_key" ] && args+=( --api-key "$api_key" )
-
-    local key_note="api_key=off"
-    [ -n "$api_key" ] && key_note="api_key=***"
-    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) start model=$MODEL_RESOLVED mmproj=${mmproj_path:-none} host=$host:$service_port ctx=$ctx_size $key_note ===" >> "$LOGFILE"
-    LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    nohup "$BIN" "${args[@]}" \
-        >> "$LOGFILE" 2>&1 &
-    echo $! > "$PIDFILE"
-
-    if wait_port; then
-        if ! port_open "$service_port"; then
-            echo "服务进程已启动，模型仍在加载中（进度见日志 $LOGFILE）。" >> "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null || true
-        fi
-        return 0
+    # KVMem 与 KV 参数（默认值对齐上游 IQ3 配方）
+    ARGS+=(
+        --kv-dtype "$kv_dtype"
+        --kvmem-budget "$kvmem_budget"
+        --kvmem-gen-reserve "$kvmem_gen_reserve"
+        --n-predict "$n_predict"
+        --image-max-tokens "$image_max_tokens"
+        --reasoning-budget "$reasoning_budget"
+    )
+    # 视觉：仅当配置了 mmproj 时生效
+    if [ -n "$mmproj_path" ]; then
+        ARGS+=( --mmproj "$mmproj_path" )
+        case "$vision_device" in
+            gpu) ARGS+=( --mmproj-offload ) ;;
+            *)   ARGS+=( --no-mmproj-offload ) ;;
+        esac
     fi
-    exit 1
+    # 投机解码 / 思考模式
+    [ "$spec" = "draft-mtp" ] && ARGS+=( --spec-type draft-mtp )
+    [ "$enable_thinking" = "on" ] && ARGS+=( --enable-thinking )
+    [ -n "$api_key" ] && ARGS+=( --api-key "$api_key" )
+}
+
+# 最近一次启动日志中是否出现“模型不含 MTP 层”的失败特征
+mtp_unsupported() {
+    tail -n 300 "$LOGFILE" 2>/dev/null \
+        | awk '/^=== /{buf=$0 "\n"; next} {buf=buf $0 "\n"} END{printf "%s", buf}' \
+        | grep -qE "doesn't contain MTP layers|failed to create MTP context"
 }
 
 do_stop() {

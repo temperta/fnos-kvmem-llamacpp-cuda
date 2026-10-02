@@ -100,6 +100,31 @@ python3 scripts/build-webui.py --output build/share/kvmem/ui-lightweight
   （实测：无 key 401 / 错 key 401 / 正确 key 200）。留空则不启用鉴权。
   **开启局域网访问时强烈建议设置**。key 明文存于 `etc/config.conf`（权限 600，
   仅包用户与 root 可读），日志中不出现明文（记为 `api_key=***`）。
+
+### 启动参数（默认值对齐上游 IQ3 配方 `scripts/start-iq3.sh`）
+
+| 向导字段 | 服务器参数 | 默认（IQ3 配方） | 说明 |
+|---|---|---|---|
+| 主模型路径 | `--model` | 自动/必填 | 见上 |
+| 视觉映射 | `--mmproj` | 空 | 多模态 projector |
+| 视觉编码器位置 | `--no-mmproj-offload` / `--mmproj-offload` | cpu | IQ3 配方视觉走 CPU |
+| KV 缓存类型 | `--kv-dtype` | q8_0 | f16/f32 精度更高更费显存 |
+| 上下文长度 | `--ctx-size` | 262144 | 256K；超出 GPU 工作集由 KVMem 主机内存检索 |
+| KVMem GPU 工作集 | `--kvmem-budget` | 36864 | 0 = 取上下文长度（不检索） |
+| KVMem 生成预留 | `--kvmem-gen-reserve` | 16384 | 解码预留 GPU 空间 |
+| 默认最大生成 | `--n-predict` | 16384 | -1 = 不额外限制 |
+| 图片最大 tokens | `--image-max-tokens` | 512 | 单图上限 |
+| MTP 投机解码 | `--spec-type` | draft-mtp | **模型不含 MTP 层时自动回退 none**（启动期检测，日志有记录） |
+| 思考模式 | `--enable-thinking` | on | ⚠ 非 Thinking 模型（模板无思考标记）须关闭，否则所有请求报错 |
+| 思考 token 预算 | `--reasoning-budget` | 4096 | -1 不限；思考关闭时忽略 |
+
+对应关系：`start-server.py --recipe iq3` 的 argv（`-c 262144 -n 16384
+--kvmem-budget 36864 --kvmem-gen-reserve 16384 --kv-dtype q8_0
+--spec-type draft-mtp --enable-thinking --reasoning-budget 4096
+--no-mmproj-offload --image-max-tokens 512`）。服务器内部默认值
+（`kvmem-mtp-state=replay`、`kvmem-query-replay=auto`、`kvmem-query-policy=user`、
+`spec-draft-n-max=3`、`spec-kv-dtype=f16`、`kvmem-block-tokens=128`）与配方一致，
+未单独暴露；如需调整可用 `/usr/local/bin/kvmem-llama` 直接命令行启动。
 - 启动流程：先加载模型（大模型可能数分钟）后绑定端口；`cmd/main` 等待端口最多 300s，
   超时但进程存活视为“加载中”并成功返回，由系统 checkport 跟踪状态。
 - 局域网访问默认关闭（绑定 127.0.0.1）；向导开启后绑定 0.0.0.0。
@@ -140,7 +165,14 @@ sudo appcenter-cli start kvmemllamacpp
   - `/props`、`/v1/models`、`/v1/chat/completions` 全部正常（185 tok/s 生成连贯回答）
   - 内置完整 Web UI：`GET /` → 200
 - `cmd/main` 生命周期脚本已在 /tmp 沙盒完整模拟：自动/指定模型、端口冲突、
-  幂等 start、stop/status 退出码（0/3）、无模型时的用户可见报错。
+  幂等 start、stop/status 退出码（0/3）、无模型/无 mmproj 时的用户可见报错、
+  全量 IQ3 参数透传、API key 往返（含逗号）、**MTP 自动回退**（draft-mtp 启动失败
+  → 检测日志特征 → none 重启成功）。
+- 完整 IQ3 配方 argv 在真实服务器上验证：非 MTP 模型下 `--spec-type draft-mtp`
+  启动即失败（日志 `model doesn't contain MTP layers`），去掉后
+  `n_ctx=262144 budget=36864 reserve=16384 think=1 rbudget=4096 qmax=512`
+  全部生效，推理正常；思考模式组合矩阵已测（仅 `think=on + 预算>0 + 模板无标记`
+  报错，其余组合正常）。
 - 产物：`dist/kvmemllamacpp.fpk`（773MB，gzip tar，22 个条目 + app.tgz 122 条目）。
 - 待目标 NAS 复核：`appcenter-cli start kvmemllamacpp` 后
   `curl 127.0.0.1:18200/props`（驱动 580/CUDA 13.0 兼容性与实际吞吐）。
