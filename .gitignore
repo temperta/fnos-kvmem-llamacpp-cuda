@@ -10,3 +10,4 @@ __pycache__/
 packaging/fnos/app/bin/llama-kvmem-server
 packaging/fnos/app/lib/
 packaging/fnos/app/share/
+.vscode/
