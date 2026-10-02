@@ -1,0 +1,8 @@
+{
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "kvmemllamacpp_user",
+  "groupname": "kvmemllamacpp_group",
+  "join-groups": ["render", "video"]
+}

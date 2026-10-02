@@ -1,0 +1,17 @@
+#!/bin/bash
+# 配置变更应用后执行：持久化新的向导值
+set -u
+ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
+CONF="$ETC/config.conf"
+mkdir -p "$ETC"
+if [ -n "${wizard_port:-}" ]; then
+    echo "service_port=$wizard_port" > "$CONF"
+    [ -n "${wizard_model_path+x}" ] && echo "model_path=${wizard_model_path:-}" >> "$CONF" || echo "model_path=" >> "$CONF"
+    [ -n "${wizard_lan_access+x}" ] && echo "lan_access=${wizard_lan_access:-no}" >> "$CONF" || echo "lan_access=no" >> "$CONF"
+    [ -n "${wizard_ctx_size+x}" ] && echo "ctx_size=${wizard_ctx_size:-32768}" >> "$CONF" || echo "ctx_size=32768" >> "$CONF"
+else
+    # 向导未提供新值时保持原配置
+    :
+fi
+chmod 644 "$CONF" 2>/dev/null || true
+exit 0

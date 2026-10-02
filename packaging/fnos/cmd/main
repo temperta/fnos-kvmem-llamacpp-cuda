@@ -1,0 +1,200 @@
+#!/bin/bash
+# KVMem LLaMA 生命周期脚本：start / stop / status
+set -u
+
+APPNAME="${TRIM_APPNAME:-kvmemllamacpp}"
+APPDIR="${TRIM_APPDEST:-/var/apps/$APPNAME/target}"
+ETC="${TRIM_PKGETC:-/var/apps/$APPNAME/etc}"
+VAR="${TRIM_PKGVAR:-/var/apps/$APPNAME/var}"
+LOGFILE="$VAR/server.log"
+PIDFILE="$VAR/server.pid"
+CONF="$ETC/config.conf"
+BIN="$APPDIR/bin/llama-kvmem-server"
+UI_DIR="$APPDIR/share/kvmem/ui"
+WAIT_LIMIT=300   # 秒：等待端口就绪的最长时间（大模型加载可能耗时数分钟）
+
+load_config() {
+    service_port=""
+    model_path=""
+    lan_access=""
+    ctx_size=""
+    if [ -f "$CONF" ]; then
+        # shellcheck disable=SC1090
+        . "$CONF" 2>/dev/null || true
+    fi
+    case "$service_port" in
+        ''|*[!0-9]*) service_port="${TRIM_SERVICE_PORT:-18200}" ;;
+    esac
+    case "$service_port" in
+        ''|*[!0-9]*) service_port=18200 ;;
+    esac
+    if [ "$service_port" -lt 1 ] || [ "$service_port" -gt 65535 ]; then
+        service_port=18200
+    fi
+    case "$ctx_size" in
+        ''|*[!0-9]*) ctx_size=32768 ;;
+    esac
+    if [ "$ctx_size" -lt 1024 ]; then
+        ctx_size=32768
+    fi
+}
+
+is_running() {
+    [ -f "$PIDFILE" ] || return 1
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null)" || return 1
+    [ -n "$pid" ] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "llama-kvmem-server" || return 1
+    return 0
+}
+
+port_open() {
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&-; return 0; }
+    return 1
+}
+
+# 等待端口就绪；进程退出则失败；超时但进程仍存活视为“模型加载中”，返回 0
+wait_port() {
+    local waited=0
+    while [ "$waited" -lt "$WAIT_LIMIT" ]; do
+        if ! is_running; then
+            { echo "服务启动失败，最后日志："; tail -n 25 "$LOGFILE" 2>/dev/null; } > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null
+            return 1
+        fi
+        if port_open "$service_port"; then
+            return 0
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+    return 0
+}
+
+pick_model() {
+    # 优先使用配置中的固定路径；否则自动选择 models 共享目录中唯一的 .gguf
+    local model="$model_path"
+    if [ -n "$model" ]; then
+        if [ -r "$model" ]; then
+            MODEL_RESOLVED="$model"
+            return 0
+        fi
+        MODEL_RESOLVED=""
+        return 1
+    fi
+    local d ggufs n
+    # TRIM_DATA_SHARE_PATHS 用冒号分隔
+    local IFS=':'
+    for d in ${TRIM_DATA_SHARE_PATHS:-}; do
+        if [ -n "$d" ] && [ -d "$d" ] && [ "$(basename "$d")" = "models" ]; then
+            if model_auto "$d"; then return 0; fi
+        fi
+    done
+    unset IFS
+    # 回退：安装目录下的 shares / share 软链
+    local candidate
+    for candidate in "/var/apps/$APPNAME/shares/models" "/var/apps/$APPNAME/share/models"; do
+        if [ -d "$candidate" ]; then
+            if model_auto "$candidate"; then return 0; fi
+        fi
+    done
+    MODEL_RESOLVED=""
+    return 1
+}
+
+# 在目录中恰好有一个 .gguf 时返回其路径
+model_auto() {
+    local dir="$1" ggufs n
+    ggufs="$(find "$dir" -maxdepth 1 -name '*.gguf' 2>/dev/null | sort)"
+    n="$(printf '%s\n' "$ggufs" | grep -c '\S' || true)"
+    if [ "$n" = "1" ]; then
+        MODEL_RESOLVED="$(printf '%s\n' "$ggufs" | head -1)"
+        return 0
+    fi
+    return 1
+}
+
+do_start() {
+    load_config
+    mkdir -p "$VAR"
+
+    # 已存活（可能仍在加载模型）：不再重复启动，继续等待端口
+    if is_running; then
+        if wait_port; then
+            return 0
+        fi
+        exit 1
+    fi
+
+    pick_model
+    if [ -z "$MODEL_RESOLVED" ]; then
+        echo "未找到可用的 GGUF 模型：请在应用设置中填写模型路径，或将一个 .gguf 文件放入共享目录 kvmemllamacpp/models 后重新启动。" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null
+        exit 1
+    fi
+
+    local host=127.0.0.1
+    case "$lan_access" in
+        yes|true|1|on) host=0.0.0.0 ;;
+    esac
+
+    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) start model=$MODEL_RESOLVED host=$host:$service_port ctx=$ctx_size ===" >> "$LOGFILE"
+    LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    nohup "$BIN" \
+        --model "$MODEL_RESOLVED" \
+        --host "$host" \
+        --port "$service_port" \
+        --ctx-size "$ctx_size" \
+        --ui-dir "$UI_DIR" \
+        >> "$LOGFILE" 2>&1 &
+    echo $! > "$PIDFILE"
+
+    if wait_port; then
+        if ! port_open "$service_port"; then
+            echo "服务进程已启动，模型仍在加载中（进度见日志 $LOGFILE）。" >> "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null || true
+        fi
+        return 0
+    fi
+    exit 1
+}
+
+do_stop() {
+    if is_running; then
+        local pid
+        pid="$(cat "$PIDFILE" 2>/dev/null)"
+        kill "$pid" 2>/dev/null || true
+        local i
+        for i in $(seq 1 30); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) stopped ===" >> "$LOGFILE"
+    fi
+    rm -f "$PIDFILE"
+    return 0
+}
+
+do_status() {
+    if is_running; then
+        exit 0
+    fi
+    exit 3
+}
+
+case "$1" in
+    start)
+        do_start
+        ;;
+    stop)
+        do_stop
+        ;;
+    status)
+        do_status
+        ;;
+    *)
+        echo "未知命令: $1" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null
+        exit 1
+        ;;
+esac

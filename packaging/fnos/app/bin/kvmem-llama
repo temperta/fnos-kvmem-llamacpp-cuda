@@ -1,0 +1,12 @@
+#!/bin/bash
+# kvmem-llama — 通过 /usr/local/bin 调用 llama-kvmem-server 的包装脚本
+# 自动定位应用安装目录并加载内置的 CUDA 运行时库
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+APPDIR="$(dirname "$(dirname "$SELF")")"
+BIN="$APPDIR/bin/llama-kvmem-server"
+if [ ! -x "$BIN" ]; then
+    echo "kvmem-llama: 未找到 $BIN，应用可能未安装" >&2
+    exit 1
+fi
+export LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$BIN" "$@"

@@ -1,0 +1,16 @@
+#!/bin/bash
+# 升级后执行：补全配置文件中缺失的默认项（不覆盖已有值）
+set -u
+ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
+CONF="$ETC/config.conf"
+mkdir -p "$ETC"
+touch "$CONF"
+for kv in "service_port:18200" "model_path:" "lan_access:no" "ctx_size:32768"; do
+    key="${kv%%:*}"
+    def="${kv#*:}"
+    if ! grep -q "^$key=" "$CONF"; then
+        echo "$key=$def" >> "$CONF"
+    fi
+done
+chmod 644 "$CONF" 2>/dev/null || true
+exit 0

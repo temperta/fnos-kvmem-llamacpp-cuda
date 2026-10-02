@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "卸载 KVMem LLaMA",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "卸载将停止并移除服务程序；共享目录 kvmemllamacpp/models 中的模型文件与日志不会被删除。"
+      }
+    ]
+  }
+]

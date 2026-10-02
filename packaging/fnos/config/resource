@@ -1,0 +1,14 @@
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "kvmemllamacpp/models"
+      }
+    ]
+  },
+  "usr-local-linker": {
+    "bin": [
+      "bin/kvmem-llama"
+    ]
+  }
+}

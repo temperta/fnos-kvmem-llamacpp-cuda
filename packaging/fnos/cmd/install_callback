@@ -1,0 +1,14 @@
+#!/bin/bash
+# 安装文件应用后执行：将安装向导收集的值持久化到配置
+set -u
+ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
+CONF="$ETC/config.conf"
+mkdir -p "$ETC"
+{
+    echo "service_port=${wizard_port:-18200}"
+    echo "model_path=${wizard_model_path:-}"
+    echo "lan_access=${wizard_lan_access:-no}"
+    echo "ctx_size=${wizard_ctx_size:-32768}"
+} > "$CONF"
+chmod 644 "$CONF" 2>/dev/null || true
+exit 0

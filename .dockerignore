@@ -1,0 +1,10 @@
+.git
+kvmem-llama.cpp/.git
+kvmem-llama.cpp/llama.cpp/.git
+build
+dist
+research
+*.fpk
+packaging/fnos/app/bin/llama-kvmem-server
+packaging/fnos/app/lib
+packaging/fnos/app/share

@@ -1,0 +1,5 @@
+#!/bin/bash
+# 安装文件应用前执行：确保运行目录存在
+set -u
+mkdir -p "${TRIM_PKGVAR:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/var}"
+exit 0

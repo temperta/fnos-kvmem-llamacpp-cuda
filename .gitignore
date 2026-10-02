@@ -1,0 +1,12 @@
+# 构建产物
+build/
+dist/
+tools/
+research/
+__pycache__/
+*.pyc
+
+# 组装进 fnpack 项目 app/ 的生成物（仓库中只保留静态文件）
+packaging/fnos/app/bin/llama-kvmem-server
+packaging/fnos/app/lib/
+packaging/fnos/app/share/

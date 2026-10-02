@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "升级 KVMem LLaMA",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "升级会保留已有的配置、共享目录中的模型文件与日志。升级完成后应用将自动重启。"
+      }
+    ]
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "stepTitle": "KVMem LLaMA 安装设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "需要 NVIDIA GPU 与驱动 580 及以上（CUDA 13.0 运行时已内置，无需另装 CUDA）。建议把 GGUF 模型文件放入共享目录 kvmemllamacpp/models。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_port",
+        "label": "服务端口",
+        "initValue": "18200",
+        "rules": [
+          { "required": true, "message": "请输入服务端口" },
+          { "pattern": "^[0-9]+$", "message": "端口只能为数字（1-65535）" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_model_path",
+        "label": "GGUF 模型路径（可选）",
+        "initValue": "",
+        "helpText": "留空：自动选择 models 共享目录中唯一的 .gguf；填写：固定使用该模型。启动服务前需先准备好模型。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_ctx_size",
+        "label": "上下文长度（tokens）",
+        "initValue": "32768",
+        "rules": [
+          { "pattern": "^[0-9]+$", "message": "请输入数字" }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_lan_access",
+        "label": "局域网访问",
+        "initValue": "no",
+        "options": [
+          { "label": "否，仅本机访问（绑定 127.0.0.1）", "value": "no" },
+          { "label": "是，允许局域网访问（绑定 0.0.0.0，生产环境建议配合 API Key）", "value": "yes" }
+        ]
+      }
+    ]
+  }
+]

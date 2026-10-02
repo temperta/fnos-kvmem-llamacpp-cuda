@@ -1,0 +1,15 @@
+appname=kvmemllamacpp
+version=0.17.0
+display_name=KVMem LLaMA
+desc=基于 kvmem-llama.cpp v0.17.0 的本地 LLM 推理服务（CUDA 加速，内置 Web 聊天界面）。<br>支持 Qwen3.8/Qwen2.5 等 GGUF 模型，KVMem 长上下文技术可在有限显存上运行 256K 级上下文。<br><br>要求：NVIDIA GPU 与驱动 580+（CUDA 13.0 运行时已内置，无需安装 CUDA 工具包）。<br>架构：x86_64，覆盖 RTX 16/20/30/40/50 系列及 A100/H100（sm_75~121）。
+source=thirdparty
+platform=x86
+maintainer=kvmem
+maintainer_url=https://github.com/kvmem/kvmem-llama.cpp
+os_min_version=1.2.0
+service_port=18200
+checkport=true
+ctl_stop=true
+desktop_uidir=ui
+desktop_applaunchname=kvmemllamacpp.main
+changelog=v0.17.0：基于 kvmem-llama.cpp v0.17.0 源码（llama.cpp v0.3.0-138-gb81c99b47），CUDA 13.0 工具链编译，内置完整与轻量两套 Web UI，支持多 GPU 架构 fat binary（sm_70/75/80/86/89/90/120/121）。
