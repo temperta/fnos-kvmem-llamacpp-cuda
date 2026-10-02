@@ -25,12 +25,26 @@
       },
       {
         "type": "text",
+        "field": "wizard_mmproj_path",
+        "label": "视觉映射文件路径 mmproj（可选）",
+        "initValue": "",
+        "helpText": "多模态模型的 vision projector GGUF（.mmproj/.gguf）；纯文本模型留空。"
+      },
+      {
+        "type": "text",
         "field": "wizard_ctx_size",
         "label": "上下文长度（tokens）",
         "initValue": "32768",
         "rules": [
           { "pattern": "^[0-9]+$", "message": "请输入数字" }
         ]
+      },
+      {
+        "type": "password",
+        "field": "wizard_api_key",
+        "label": "API Key（可选）",
+        "initValue": "",
+        "helpText": "设置后所有 API 请求须携带 Authorization: Bearer <key>；多个 key 用英文逗号分隔。开启局域网访问时强烈建议设置。"
       },
       {
         "type": "select",

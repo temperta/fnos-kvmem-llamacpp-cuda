@@ -16,6 +16,8 @@ WAIT_LIMIT=300   # 秒：等待端口就绪的最长时间（大模型加载可�
 load_config() {
     service_port=""
     model_path=""
+    mmproj_path=""
+    api_key=""
     lan_access=""
     ctx_size=""
     if [ -f "$CONF" ]; then
@@ -37,6 +39,9 @@ load_config() {
     if [ "$ctx_size" -lt 1024 ]; then
         ctx_size=32768
     fi
+    # 去除路径首尾空白
+    mmproj_path="${mmproj_path#"${mmproj_path%%[![:space:]]*}"}"
+    mmproj_path="${mmproj_path%"${mmproj_path##*[![:space:]]}"}"
 }
 
 is_running() {
@@ -137,14 +142,27 @@ do_start() {
         yes|true|1|on) host=0.0.0.0 ;;
     esac
 
-    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) start model=$MODEL_RESOLVED host=$host:$service_port ctx=$ctx_size ===" >> "$LOGFILE"
+    # 视觉映射文件（mmproj）：设置了就必须可读，否则给出明确错误
+    if [ -n "$mmproj_path" ] && [ ! -r "$mmproj_path" ]; then
+        echo "视觉映射文件不存在或不可读：$mmproj_path（请在应用设置中修正路径，或留空以禁用视觉功能）" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null
+        exit 1
+    fi
+
+    local args=(
+        --model "$MODEL_RESOLVED"
+        --host "$host"
+        --port "$service_port"
+        --ctx-size "$ctx_size"
+        --ui-dir "$UI_DIR"
+    )
+    [ -n "$mmproj_path" ] && args+=( --mmproj "$mmproj_path" )
+    [ -n "$api_key" ] && args+=( --api-key "$api_key" )
+
+    local key_note="api_key=off"
+    [ -n "$api_key" ] && key_note="api_key=***"
+    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) start model=$MODEL_RESOLVED mmproj=${mmproj_path:-none} host=$host:$service_port ctx=$ctx_size $key_note ===" >> "$LOGFILE"
     LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    nohup "$BIN" \
-        --model "$MODEL_RESOLVED" \
-        --host "$host" \
-        --port "$service_port" \
-        --ctx-size "$ctx_size" \
-        --ui-dir "$UI_DIR" \
+    nohup "$BIN" "${args[@]}" \
         >> "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
 

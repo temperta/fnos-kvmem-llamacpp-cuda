@@ -5,7 +5,7 @@ ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
 CONF="$ETC/config.conf"
 mkdir -p "$ETC"
 touch "$CONF"
-for kv in "service_port:18200" "model_path:" "lan_access:no" "ctx_size:32768"; do
+for kv in "service_port:18200" "model_path:" "mmproj_path:" "api_key:" "lan_access:no" "ctx_size:32768"; do
     key="${kv%%:*}"
     def="${kv#*:}"
     if ! grep -q "^$key=" "$CONF"; then

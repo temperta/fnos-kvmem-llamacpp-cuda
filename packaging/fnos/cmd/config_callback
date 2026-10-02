@@ -1,17 +1,20 @@
 #!/bin/bash
 # 配置变更应用后执行：持久化新的向导值
+# 注意：config.conf 可能包含 api_key（明文），权限收紧为 600
 set -u
 ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
 CONF="$ETC/config.conf"
 mkdir -p "$ETC"
 if [ -n "${wizard_port:-}" ]; then
-    echo "service_port=$wizard_port" > "$CONF"
-    [ -n "${wizard_model_path+x}" ] && echo "model_path=${wizard_model_path:-}" >> "$CONF" || echo "model_path=" >> "$CONF"
-    [ -n "${wizard_lan_access+x}" ] && echo "lan_access=${wizard_lan_access:-no}" >> "$CONF" || echo "lan_access=no" >> "$CONF"
-    [ -n "${wizard_ctx_size+x}" ] && echo "ctx_size=${wizard_ctx_size:-32768}" >> "$CONF" || echo "ctx_size=32768" >> "$CONF"
+    printf 'service_port=%q\n' "$wizard_port" > "$CONF"
+    printf 'model_path=%q\n' "${wizard_model_path:-}" >> "$CONF"
+    printf 'mmproj_path=%q\n' "${wizard_mmproj_path:-}" >> "$CONF"
+    printf 'api_key=%q\n' "${wizard_api_key:-}" >> "$CONF"
+    printf 'lan_access=%q\n' "${wizard_lan_access:-no}" >> "$CONF"
+    printf 'ctx_size=%q\n' "${wizard_ctx_size:-32768}" >> "$CONF"
 else
     # 向导未提供新值时保持原配置
     :
 fi
-chmod 644 "$CONF" 2>/dev/null || true
+chmod 600 "$CONF" 2>/dev/null || true
 exit 0

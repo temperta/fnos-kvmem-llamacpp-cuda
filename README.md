@@ -93,6 +93,13 @@ python3 scripts/build-webui.py --output build/share/kvmem/ui-lightweight
   与 NAS 上已装的 CUDA 12.8（Nvidia-Driver-580 附带）互不干扰。
 - 模型：向导可填固定 GGUF 路径；留空则自动选择共享目录 `kvmemllamacpp/models`
   中**唯一**的 `.gguf`（多个时需在设置中指定）。启动前找不到模型会给出明确报错。
+- 视觉映射（mmproj）：向导可填 vision projector 的 `.mmproj/.gguf` 路径，
+  启动时追加 `--mmproj`；纯文本模型留空。设置了但文件不可读会启动失败并明确报错。
+- API Key：向导可填（password 字段），支持逗号分隔多个 key，启动时追加 `--api-key`。
+  设置后所有 API 请求须携带 `Authorization: Bearer <key>`，否则 401
+  （实测：无 key 401 / 错 key 401 / 正确 key 200）。留空则不启用鉴权。
+  **开启局域网访问时强烈建议设置**。key 明文存于 `etc/config.conf`（权限 600，
+  仅包用户与 root 可读），日志中不出现明文（记为 `api_key=***`）。
 - 启动流程：先加载模型（大模型可能数分钟）后绑定端口；`cmd/main` 等待端口最多 300s，
   超时但进程存活视为“加载中”并成功返回，由系统 checkport 跟踪状态。
 - 局域网访问默认关闭（绑定 127.0.0.1）；向导开启后绑定 0.0.0.0。
@@ -108,6 +115,8 @@ sudo appcenter-cli install-fpk /path/to/kvmemllamacpp.fpk
 # 向导值可通过环境变量文件传入（config.env，每行 key=value）：
 #   wizard_port=18200
 #   wizard_model_path=/vol1/@appdata.../kvmemllamacpp/models/model.gguf
+#   wizard_mmproj_path=/vol1/.../mmproj.gguf      # 视觉映射，可选
+#   wizard_api_key=sk-xxx                         # API Key，可选（多 key 逗号分隔）
 #   wizard_ctx_size=32768
 #   wizard_lan_access=no
 sudo appcenter-cli install-fpk kvmemllamacpp.fpk --env config.env

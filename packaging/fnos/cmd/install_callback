@@ -1,14 +1,17 @@
 #!/bin/bash
 # 安装文件应用后执行：将安装向导收集的值持久化到配置
+# 注意：config.conf 可能包含 api_key（明文），权限收紧为 600
 set -u
 ETC="${TRIM_PKGETC:-/var/apps/${TRIM_APPNAME:-kvmemllamacpp}/etc}"
 CONF="$ETC/config.conf"
 mkdir -p "$ETC"
 {
-    echo "service_port=${wizard_port:-18200}"
-    echo "model_path=${wizard_model_path:-}"
-    echo "lan_access=${wizard_lan_access:-no}"
-    echo "ctx_size=${wizard_ctx_size:-32768}"
+    printf 'service_port=%q\n' "${wizard_port:-18200}"
+    printf 'model_path=%q\n' "${wizard_model_path:-}"
+    printf 'mmproj_path=%q\n' "${wizard_mmproj_path:-}"
+    printf 'api_key=%q\n' "${wizard_api_key:-}"
+    printf 'lan_access=%q\n' "${wizard_lan_access:-no}"
+    printf 'ctx_size=%q\n' "${wizard_ctx_size:-32768}"
 } > "$CONF"
-chmod 644 "$CONF" 2>/dev/null || true
+chmod 600 "$CONF" 2>/dev/null || true
 exit 0
